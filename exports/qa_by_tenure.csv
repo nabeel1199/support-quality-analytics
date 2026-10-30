@@ -1,0 +1,4 @@
+tenure_band,evaluations,avg_qa_score,auto_fail_pct
+0-3 months,695,88.2,21.2
+3-6 months,558,90.1,18.5
+6+ months,6046,92.6,14.3

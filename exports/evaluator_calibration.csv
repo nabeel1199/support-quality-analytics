@@ -1,0 +1,13 @@
+evaluator_id,criteria_type,judgements,agreement_pct,stricter_than_consensus,more_lenient_than_consensus
+QE01,Critical criteria,360,99.4,2,0
+QE02,Critical criteria,360,99.4,2,0
+QE03,Critical criteria,360,98.9,3,1
+QE04,Critical criteria,360,99.2,2,1
+QE05,Critical criteria,360,99.2,1,2
+QE06,Critical criteria,360,99.7,1,0
+QE01,Soft-skill criteria,359,98.3,2,4
+QE02,Soft-skill criteria,359,98.9,3,1
+QE03,Soft-skill criteria,359,99.7,0,1
+QE04,Soft-skill criteria,359,80.2,67,4
+QE05,Soft-skill criteria,359,98.6,1,4
+QE06,Soft-skill criteria,359,93.6,1,22

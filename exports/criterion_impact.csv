@@ -1,0 +1,7 @@
+criterion,csat_pct_when_passed,csat_pct_when_failed,reopen_pct_when_passed,reopen_pct_when_failed,csat_responses_when_failed
+accuracy,76.6,23.1,5.9,18.7,91
+policy_compliance,74.5,57.8,6.5,11.5,90
+empathy,75.4,61.0,6.8,6.2,205
+documentation,74.7,67.8,6.5,8.3,270
+greeting,73.3,76.2,6.6,8.1,130
+verification,73.4,76.7,6.6,9.5,73

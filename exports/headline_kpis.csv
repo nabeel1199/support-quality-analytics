@@ -1,0 +1,2 @@
+tickets,agents,sla_met_pct,median_resolution_hours,avg_handle_min,escalation_pct,reopen_pct,survey_response_pct,csat_pct,avg_qa_score,auto_fail_pct,qa_evaluations
+63180,80,89.3,15.7,12.4,7.4,6.5,21.9,73.4,92.0,15.2,7304

@@ -1,0 +1,3 @@
+grp,evaluations,qa_score_before,qa_score_after,qa_score_change,auto_fail_pct_before,auto_fail_pct_after,auto_fail_change_pts
+Team C (coached),741,92.7,94.4,1.8,13.6,11.5,-2.1
+Other teams,4877,92.6,92.3,-0.2,14.2,14.9,0.7

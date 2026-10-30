@@ -1,0 +1,8 @@
+duckdb==1.4.5
+pandas==2.3.3
+numpy==2.0.2
+pyarrow==21.0.0
+matplotlib==3.9.4
+nbformat==5.10.4
+nbclient==0.10.2
+ipykernel==6.31.0

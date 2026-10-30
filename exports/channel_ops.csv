@@ -1,0 +1,6 @@
+channel,tickets,median_first_response_min,p90_first_response_min,sla_met_pct,csat_pct
+chat,28127,1.4,3.4,90.4,73.6
+email,18673,167.1,401.4,87.1,72.9
+phone,12668,0.7,1.8,90.1,74.2
+social,3080,42.1,100.7,90.5,73.5
+unknown,632,2.0,215.3,87.7,67.4

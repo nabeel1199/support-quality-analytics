@@ -1,0 +1,6 @@
+ord,check_name,rows_affected,action
+1,Duplicate rows (same ticket ID loaded twice),316,Removed (one row kept per ticket)
+2,Resolved before it was created (bad timestamp),40,"Kept for volume, excluded from time metrics"
+3,CSAT outside the 1–5 scale,60,Set to NULL (no valid survey)
+4,Agent ID not found in the agent list,25,"Kept, team = Unknown"
+5,Channel not recorded,632,"Labelled ""unknown"""

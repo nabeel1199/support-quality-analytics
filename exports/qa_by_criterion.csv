@@ -1,0 +1,7 @@
+criterion,is_critical,weight,fails,fail_rate_pct,share_of_all_fails_pct
+documentation,False,15,1138,15.6,29.5
+empathy,False,10,989,13.5,25.6
+greeting,False,10,559,7.7,14.5
+accuracy,True,25,461,6.3,11.9
+policy_compliance,True,20,400,5.5,10.4
+verification,True,20,315,4.3,8.2

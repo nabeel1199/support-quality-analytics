@@ -1,0 +1,7 @@
+evaluator_id,evaluations,avg_qa_score,diff_vs_overall
+QE01,1219,92.5,0.5
+QE02,1216,92.4,0.4
+QE03,1253,92.5,0.5
+QE04,1159,88.0,-4.0
+QE05,1255,92.7,0.7
+QE06,1202,93.9,1.9
