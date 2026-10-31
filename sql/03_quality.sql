@@ -22,7 +22,7 @@ SELECT criterion,
              / sum(count(*) FILTER (WHERE result = 'fail')) OVER (), 1)           AS share_of_all_fails_pct
 FROM qa_long
 GROUP BY ALL
-ORDER BY fails DESC;
+ORDER BY fails DESC, criterion;
 
 -- New agents vs experienced agents.
 CREATE OR REPLACE TABLE qa_by_tenure AS
@@ -59,4 +59,4 @@ SELECT l.criterion,
 FROM qa_long l
 JOIN tickets t USING (ticket_id)
 GROUP BY l.criterion
-ORDER BY csat_pct_when_passed - csat_pct_when_failed DESC;
+ORDER BY csat_pct_when_passed - csat_pct_when_failed DESC, criterion;

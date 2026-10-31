@@ -41,7 +41,7 @@ SELECT channel,
        round(100.0 * avg((csat >= 4)::INT) FILTER (WHERE csat IS NOT NULL), 1) AS csat_pct
 FROM tickets
 GROUP BY channel
-ORDER BY tickets DESC;
+ORDER BY tickets DESC, channel;
 
 CREATE OR REPLACE TABLE category_ops AS
 SELECT category,
@@ -53,7 +53,7 @@ SELECT category,
        round(100.0 * avg((csat >= 4)::INT) FILTER (WHERE csat IS NOT NULL), 1) AS csat_pct
 FROM tickets
 GROUP BY category
-ORDER BY tickets DESC;
+ORDER BY tickets DESC, category;
 
 -- Does the day a ticket arrives affect whether it meets SLA? (weekend staffing / Monday backlog)
 CREATE OR REPLACE TABLE sla_by_weekday AS

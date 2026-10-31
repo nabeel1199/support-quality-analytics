@@ -129,7 +129,6 @@ def make_tickets(rng: np.random.Generator, agents: pd.DataFrame) -> pd.DataFrame
     # Hidden "true" quality of each interaction: which rubric criteria were failed.
     probs = error_probabilities(a["skill"].values, tenure_days, coached_months)
     errors = {c: rng.random(n) < p for c, p in probs.items()}
-    any_critical = errors["verification"] | errors["accuracy"] | errors["policy_compliance"]
 
     # Operational measures
     load = pd.Series(1, index=created).groupby(created.normalize()).transform("count").values
@@ -238,19 +237,19 @@ def add_dirty_data(rng, tickets: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([t, dupes]).sort_values("created_at").reset_index(drop=True)
 
 
-def main() -> None:
+def main(out_dir: Path = RAW) -> None:
     rng = np.random.default_rng(SEED)
-    RAW.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     agents = make_agents(rng)
     tickets, hidden = make_tickets(rng, agents)
     qa = make_qa(rng, tickets, hidden)
     calibration = make_calibration(rng, tickets, hidden)
     dirty = add_dirty_data(rng, tickets)
 
-    agents.drop(columns="skill").to_csv(RAW / "agents.csv", index=False)
-    dirty.to_csv(RAW / "tickets.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
-    qa.to_csv(RAW / "qa_evaluations.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
-    calibration.to_csv(RAW / "calibration.csv", index=False)
+    agents.drop(columns="skill").to_csv(out_dir / "agents.csv", index=False)
+    dirty.to_csv(out_dir / "tickets.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
+    qa.to_csv(out_dir / "qa_evaluations.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
+    calibration.to_csv(out_dir / "calibration.csv", index=False)
     print(f"agents: {len(agents)}, tickets: {len(dirty):,}, QA evaluations: {len(qa):,}, "
           f"calibration rows: {len(calibration):,}")
 

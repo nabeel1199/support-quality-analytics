@@ -1,0 +1,4 @@
+evaluation_id,ticket_id,agent_id,evaluator_id,evaluated_at,greeting,verification,accuracy,policy_compliance,empathy,documentation
+E1,T1,AG001,QE01,2026-01-06 10:00:00,pass,pass,pass,pass,pass,pass
+E2,T2,AG001,QE02,2026-01-06 11:00:00,pass,pass,fail,pass,pass,pass
+E3,T5,AG002,QE01,2026-01-09 10:00:00,pass,pass,pass,pass,fail,pass

@@ -9,7 +9,7 @@ order, and exports the result tables to CSV (used by the notebook, the
 dashboard and the Tableau guide).
 """
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import duckdb
 
@@ -46,14 +46,27 @@ EXPORT_TABLES = [
 ]
 
 
-def build(con: Optional[duckdb.DuckDBPyConnection] = None) -> duckdb.DuckDBPyConnection:
-    if not (RAW / "tickets.csv").exists():
+def load_raw(con: duckdb.DuckDBPyConnection, raw_dir: Path = RAW) -> None:
+    """Register each raw CSV as a view called raw_<name>."""
+    for view, file in RAW_VIEWS.items():
+        con.execute(f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_csv_auto('{(raw_dir / file).as_posix()}')")
+
+
+def run_sql(con: duckdb.DuckDBPyConnection, sql_files: Optional[Iterable[Path]] = None) -> None:
+    """Execute the given SQL files (default: every file in sql/, in numbered order)."""
+    for sql_file in sql_files or sorted(SQL_DIR.glob("*.sql")):
+        con.execute(sql_file.read_text())
+
+
+def build(con: Optional[duckdb.DuckDBPyConnection] = None, raw_dir: Path = RAW) -> duckdb.DuckDBPyConnection:
+    if not (raw_dir / "tickets.csv").exists():
         raise SystemExit("Raw data missing - run `python scripts/generate_data.py` first.")
     con = con or duckdb.connect()
-    for view, file in RAW_VIEWS.items():
-        con.execute(f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_csv_auto('{(RAW / file).as_posix()}')")
-    for sql_file in sorted(SQL_DIR.glob("*.sql")):
-        con.execute(sql_file.read_text())
+    # Parallel aggregation adds floats in a different order on each run, which can flip a rounded
+    # average (11.85 -> 11.8 or 11.9). One thread keeps every export identical; the data is small.
+    con.execute("SET threads TO 1")
+    load_raw(con, raw_dir)
+    run_sql(con)
     return con
 
 

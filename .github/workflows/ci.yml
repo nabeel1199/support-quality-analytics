@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Lint and test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check src scripts tests
+      - name: Unit and end-to-end tests
+        run: pytest
+      - name: Rebuild the data, exports and dashboard
+        run: |
+          python scripts/generate_data.py
+          python src/pipeline.py
+          python src/build_dashboard.py
+      - name: Committed results must match a fresh run
+        run: git diff --exit-code exports docs
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t support-quality-analytics .
+      - name: Run the pipeline in the container
+        run: docker run --rm support-quality-analytics
+      - name: Run the tests in the container
+        run: docker run --rm support-quality-analytics pytest

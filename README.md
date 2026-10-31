@@ -1,5 +1,7 @@
 # Support Quality Analytics: QA, SLA & CSAT
 
+[![CI](https://github.com/nabeel1199/support-quality-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/nabeel1199/support-quality-analytics/actions/workflows/ci.yml)
+
 Analytics for a customer-support operation (80 agents, 63,180 tickets, 7,304 QA evaluations over 12 months). It answers the questions a support or quality manager actually asks:
 
 - Are we meeting SLA, and when do we miss it?
@@ -62,6 +64,9 @@ Analytics for a customer-support operation (80 agents, 63,180 tickets, 7,304 QA 
 ├── src/build_dashboard.py        # docs/index.html (GitHub Pages)
 ├── notebooks/analysis.ipynb
 ├── exports/                      # result tables (also for Tableau)
+├── tests/                        # pytest: unit tests on hand-made fixtures + end-to-end tests
+├── .github/workflows/ci.yml      # GitHub Actions: lint, test, rebuild, Docker
+├── Dockerfile
 └── TABLEAU_GUIDE.md
 ```
 
@@ -76,6 +81,28 @@ python src/charts.py
 python src/build_dashboard.py
 python scripts/make_notebook.py
 ```
+
+Or with Docker:
+
+```bash
+docker build -t support-quality-analytics .
+docker run --rm support-quality-analytics          # generate data + run the pipeline
+docker run --rm support-quality-analytics pytest   # run the tests
+```
+
+## Tests and CI
+
+```bash
+pip install -r requirements-dev.txt
+pytest            # 33 tests, about 5 seconds
+ruff check src scripts tests
+```
+
+- **Unit tests** (`tests/test_cleaning.py`) run the cleaning SQL on a tiny hand-made dataset in `tests/fixtures/`, where each ticket is built to break exactly one rule: a duplicate, a ticket resolved before it was created, a CSAT of 9, an unknown agent, a blank channel. They check that each problem is counted once and handled as documented, and that SLA, tenure bands, QA scores and auto-fails follow the rubric.
+- **End-to-end tests** (`tests/test_pipeline.py`) generate the full dataset and run every SQL file. They check that the generator is reproducible, every export has rows, all injected dirty data is found, scores and percentages stay in range, the headline numbers match this README, and the exports are **identical on every run**.
+- **GitHub Actions** (`.github/workflows/ci.yml`) runs on every push and pull request, on Python 3.9 and 3.12. It lints, runs the tests, rebuilds the data, exports and dashboard and fails if the committed results differ from a fresh run, then builds the Docker image and runs the pipeline and tests inside it.
+
+The run-to-run check caught two real issues. Tied agents in the scorecard came out in a different order on each run, so every sorted export now has a tie-breaker. Parallel aggregation also added floats in a different order each time, which could flip a rounded average (11.85 → 11.8 or 11.9), so the pipeline runs DuckDB on one thread.
 
 ## SQL techniques used
 

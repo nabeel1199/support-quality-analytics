@@ -90,4 +90,4 @@ SELECT o.*, q.evaluations, q.avg_qa_score, q.auto_fail_pct,
             THEN 'Coaching priority' END                                                     AS flag
 FROM ops o
 LEFT JOIN qa q USING (agent_id)
-ORDER BY qa_rank NULLS LAST;
+ORDER BY qa_rank NULLS LAST, agent_id;  -- agent_id breaks ties so the export is identical on every run
