@@ -100,7 +100,7 @@ ruff check src scripts tests
 
 - **Unit tests** (`tests/test_cleaning.py`) run the cleaning SQL on a tiny hand-made dataset in `tests/fixtures/`, where each ticket is built to break exactly one rule: a duplicate, a ticket resolved before it was created, a CSAT of 9, an unknown agent, a blank channel. They check that each problem is counted once and handled as documented, and that SLA, tenure bands, QA scores and auto-fails follow the rubric.
 - **End-to-end tests** (`tests/test_pipeline.py`) generate the full dataset and run every SQL file. They check that the generator is reproducible, every export has rows, all injected dirty data is found, scores and percentages stay in range, the headline numbers match this README, and the exports are **identical on every run**.
-- **GitHub Actions** (`.github/workflows/ci.yml`) runs on every push and pull request, on Python 3.9 and 3.12. It lints, runs the tests, rebuilds the data, exports and dashboard and fails if the committed results differ from a fresh run, then builds the Docker image and runs the pipeline and tests inside it.
+- **GitHub Actions** (`.github/workflows/ci.yml`) runs on every push and pull request, on Python 3.10 and 3.12. It lints, runs the tests, rebuilds the data, exports and dashboard and fails if the committed results differ from a fresh run, then builds the Docker image and runs the pipeline and tests inside it.
 
 The run-to-run check caught two real issues. Tied agents in the scorecard came out in a different order on each run, so every sorted export now has a tie-breaker. Parallel aggregation also added floats in a different order each time, which could flip a rounded average (11.85 → 11.8 or 11.9), so the pipeline runs DuckDB on one thread.
 
