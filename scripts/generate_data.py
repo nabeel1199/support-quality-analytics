@@ -19,6 +19,10 @@ Outputs (data/raw/):
     tickets.csv           one row per support ticket (~60k)
     qa_evaluations.csv    one row per QA evaluation of a sampled ticket
     calibration.csv       monthly calibration: the same tickets scored by every evaluator
+    calibration_truth.csv the hidden "true" result of every criterion on each calibration
+                          ticket. Real QA never has this; the LLM evaluator experiment
+                          (src/llm_evaluator.py) uses it to write transcripts and to score
+                          humans and the LLM against the truth.
 """
 from pathlib import Path
 
@@ -209,18 +213,26 @@ def make_qa(rng, tickets: pd.DataFrame, hidden: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([qa, scores], axis=1)
 
 
-def make_calibration(rng, tickets: pd.DataFrame, hidden: pd.DataFrame) -> pd.DataFrame:
-    """Each month, 10 tickets are scored independently by every evaluator."""
-    rows = []
+def make_calibration(rng, tickets: pd.DataFrame, hidden: pd.DataFrame):
+    """Each month, 10 tickets are scored independently by every evaluator.
+
+    Returns the evaluators' scores and the hidden truth for the same tickets.
+    Collecting the truth draws no random numbers, so the scores are unchanged.
+    """
+    rows, truth = [], []
     for month, g in tickets.groupby(tickets["created_at"].dt.to_period("M")):
         pick = g.sample(10, random_state=int(rng.integers(1e9))).index
+        t = pd.DataFrame({c: np.where(v.values, "fail", "pass") for c, v in hidden.loc[pick].items()})
+        t.insert(0, "ticket_id", tickets.loc[pick, "ticket_id"].values)
+        t.insert(0, "session_month", str(month))
+        truth.append(t)
         for ev in EVALUATORS:
             s = evaluate(rng, hidden.loc[pick].reset_index(drop=True), ev)
             s.insert(0, "evaluator_id", ev)
             s.insert(0, "ticket_id", tickets.loc[pick, "ticket_id"].values)
             s.insert(0, "session_month", str(month))
             rows.append(s)
-    return pd.concat(rows, ignore_index=True)
+    return pd.concat(rows, ignore_index=True), pd.concat(truth, ignore_index=True)
 
 
 def add_dirty_data(rng, tickets: pd.DataFrame) -> pd.DataFrame:
@@ -243,13 +255,14 @@ def main(out_dir: Path = RAW) -> None:
     agents = make_agents(rng)
     tickets, hidden = make_tickets(rng, agents)
     qa = make_qa(rng, tickets, hidden)
-    calibration = make_calibration(rng, tickets, hidden)
+    calibration, calibration_truth = make_calibration(rng, tickets, hidden)
     dirty = add_dirty_data(rng, tickets)
 
     agents.drop(columns="skill").to_csv(out_dir / "agents.csv", index=False)
     dirty.to_csv(out_dir / "tickets.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
     qa.to_csv(out_dir / "qa_evaluations.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
     calibration.to_csv(out_dir / "calibration.csv", index=False)
+    calibration_truth.to_csv(out_dir / "calibration_truth.csv", index=False)
     print(f"agents: {len(agents)}, tickets: {len(dirty):,}, QA evaluations: {len(qa):,}, "
           f"calibration rows: {len(calibration):,}")
 

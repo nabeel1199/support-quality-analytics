@@ -31,6 +31,8 @@ jobs:
           python scripts/generate_data.py
           python src/pipeline.py
           python src/build_dashboard.py
+      - name: Replay the saved LLM evaluator responses (no API key needed)
+        run: python src/llm_evaluator.py analyse
       - name: Committed results must match a fresh run
         run: git diff --exit-code exports docs
 

@@ -53,13 +53,51 @@ Analytics for a customer-support operation (80 agents, 63,180 tickets, 7,304 QA 
 
 **QA scoring:** 6 criteria with weights: greeting 10, verification 20, accuracy 25, policy compliance 20, empathy 10, documentation 15. Score = % of points passed. A failed **critical** criterion (verification, accuracy, policy) is counted as an **auto-fail**.
 
+## LLM evaluator (experiment)
+
+**Question:** can an LLM score support tickets against this rubric as well as the QA team, and is it better calibrated than QE04 and QE06?
+
+The experiment uses the 120 calibration tickets, where all six evaluators scored the same tickets and the generator also knows the hidden truth ([`src/llm_evaluator.py`](src/llm_evaluator.py), [`sql/llm/agreement.sql`](sql/llm/agreement.sql)):
+
+1. **Write.** Claude writes a transcript for each ticket in which the agent fails exactly the criteria the truth says were failed, using a fixed policy sheet (delivery times, refund window, identity check, credit cap, escalation rules).
+2. **Judge.** A separate, **blind** call scores each transcript against the rubric. The judge sees only the transcript, never the truth or the failure list; a test checks this on every request.
+3. **Compare.** The LLM joins the six humans as a seventh rater. Every rater is scored against the **truth** (errors caught, false flags, Cohen's kappa) and against the human majority, reusing the calibration SQL.
+
+**Comparing with the truth already shows something the majority vote hides.** QE06 agrees with the majority on 93.6% of soft-skill judgements, which looks acceptable, but catches only **50% of real soft-skill errors** (23 of 46). QE04 flags **21% of soft-skill passes** as fails (kappa 0.43). Errors are rare (64 of 720 judgements), so plain agreement flatters everyone: a rater who passed everything would still agree 91% of the time.
+
+| Rater | Errors caught | False flags | Kappa vs truth |
+|---|---|---|---|
+| Best human (QE03) | 96.9% | 0.5% | 0.957 |
+| QE04 (harsh) | 90.6% | 10.5% | 0.555 |
+| QE06 (lenient) | 64.1% | 0.3% | 0.748 |
+| LLM judge | *not run yet* | | |
+
+**Run it** (needs Python 3.10+ and an Anthropic API key):
+
+```bash
+pip install -r requirements-llm.txt
+export ANTHROPIC_API_KEY=...                    # your own key
+python src/llm_evaluator.py estimate            # pending calls and estimated cost, no API calls
+python src/llm_evaluator.py generate --limit 5  # try a few first and read them in llm_eval/transcripts.jsonl
+python src/llm_evaluator.py generate
+python src/llm_evaluator.py judge
+python src/llm_evaluator.py analyse             # exports/llm_*.csv
+```
+
+Both steps default to Claude Opus 5.5: about $13 for all 240 calls by a rough estimate, which `estimate` refines once real calls exist. `--model claude-haiku-5-5` costs about $0.30. `--effort` sets the judge's thinking effort. Requests use structured outputs, so every judgment is valid JSON with evidence and a pass/fail for each criterion, plus the server-side refusal fallback. Every response is saved to `llm_eval/*.jsonl`. A rerun only calls the API for tickets that are missing or out of date, and CI replays the saved responses with no key.
+
+**Limits.** The transcripts are written by an LLM from the truth, so this measures whether the rubric is clear and the judge applies it consistently, not accuracy on real customer conversations. When the same model writes and judges, it may favour its own writing; judging with a different `--model` tests that. There are only 18 true critical-criteria errors, so a gap of a few points between raters is noise. `exports/llm_disagreements.csv` lists every judgement that differs from the truth, with the judge's evidence, to read by hand: a disagreement can be the judge's mistake or a transcript that missed its spec.
+
 ## Project structure
 
 ```
 ├── scripts/generate_data.py      # synthetic data generator (seeded)
 ├── scripts/make_notebook.py      # builds + executes the notebook
 ├── sql/                          # all analysis logic (5 files, run in order)
+├── sql/llm/agreement.sql         # LLM evaluator: every rater vs truth and the human majority
 ├── src/pipeline.py               # runs the SQL, exports results to exports/*.csv
+├── src/llm_evaluator.py          # LLM evaluator: write transcripts, judge blind, analyse
+├── llm_eval/                     # saved API responses (replayed by CI and the tests)
 ├── src/charts.py                 # README figures
 ├── src/build_dashboard.py        # docs/index.html (GitHub Pages)
 ├── notebooks/analysis.ipynb
@@ -94,12 +132,13 @@ docker run --rm support-quality-analytics pytest   # run the tests
 
 ```bash
 pip install -r requirements-dev.txt
-pytest            # 33 tests, about 5 seconds
+pytest            # 52 tests, about 10 seconds
 ruff check src scripts tests
 ```
 
 - **Unit tests** (`tests/test_cleaning.py`) run the cleaning SQL on a tiny hand-made dataset in `tests/fixtures/`, where each ticket is built to break exactly one rule: a duplicate, a ticket resolved before it was created, a CSAT of 9, an unknown agent, a blank channel. They check that each problem is counted once and handled as documented, and that SLA, tenure bands, QA scores and auto-fails follow the rubric.
 - **End-to-end tests** (`tests/test_pipeline.py`) generate the full dataset and run every SQL file. They check that the generator is reproducible, every export has rows, all injected dirty data is found, scores and percentages stay in range, the headline numbers match this README, and the exports are **identical on every run**.
+- **LLM evaluator tests** (`tests/test_llm_evaluator.py`) use a fake API client, so they need no key and cost nothing. They check that the judge never sees the answer, that requests use structured output and the refusal fallback, that saved responses are reused and stale ones redone, that unusable or leaky output is rejected, and that a perfect judge scores exactly 100% while a single missed error is counted once.
 - **GitHub Actions** (`.github/workflows/ci.yml`) runs on every push and pull request, on Python 3.10 and 3.12. It lints, runs the tests, rebuilds the data, exports and dashboard and fails if the committed results differ from a fresh run, then builds the Docker image and runs the pipeline and tests inside it.
 
 The run-to-run check caught two real issues. Tied agents in the scorecard came out in a different order on each run, so every sorted export now has a tie-breaker. Parallel aggregation also added floats in a different order each time, which could flip a rounded average (11.85 → 11.8 or 11.9), so the pipeline runs DuckDB on one thread.
