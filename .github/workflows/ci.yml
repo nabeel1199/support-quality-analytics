@@ -31,8 +31,11 @@ jobs:
           python scripts/generate_data.py
           python src/pipeline.py
           python src/build_dashboard.py
+      # Skipped until LLM results are committed. After that it fails if they no longer match the
+      # data or prompts, instead of passing with nothing to check.
       - name: Replay the saved LLM evaluator responses (no API key needed)
-        run: python src/llm_evaluator.py analyse
+        if: hashFiles('llm_eval/judgments.jsonl') != ''
+        run: python src/llm_evaluator.py analyse --require-results
       - name: Committed results must match a fresh run
         run: git diff --exit-code exports docs
 

@@ -19,7 +19,9 @@ evaluators scored the same tickets and the generator knows the hidden truth:
 
 API responses are saved to llm_eval/*.jsonl and committed, so `analyse` and the
 tests replay them with no API key. A run only calls the API for tickets that
-are missing or out of date (the spec, prompt version or transcript changed).
+are missing or out of date (the spec, prompt version or transcript changed, or
+`generate` is run with a different model). Judgments from each model and effort
+are kept side by side, so every judge is scored as a separate rater.
 Needs `pip install -r requirements-llm.txt` and ANTHROPIC_API_KEY for the API steps.
 """
 from __future__ import annotations
@@ -315,8 +317,14 @@ def write_jsonl(path: Path, records: list, sort_key: Callable) -> None:
     tmp.replace(path)
 
 
-def transcript_is_current(record: Optional[dict], spec: dict) -> bool:
-    return bool(record) and record["writer_version"] == WRITER_VERSION and record["spec"] == spec_key(spec)
+def transcript_is_current(record: Optional[dict], spec: dict, model: Optional[str] = None) -> bool:
+    """Written to this spec with the current writer prompt and effort, and by `model` when one is given.
+
+    `generate --model X` passes its model, so it rewrites transcripts that another model wrote. The judge
+    and `analyse` pass none: they use whichever transcripts exist.
+    """
+    return (bool(record) and record["writer_version"] == WRITER_VERSION and record["effort"] == WRITER_EFFORT
+            and record["spec"] == spec_key(spec) and (model is None or record["model"] == model))
 
 
 def current_transcripts(specs: list, path: Path = TRANSCRIPTS) -> dict:
@@ -365,7 +373,8 @@ def generate(client, specs: list, model: str = DEFAULT_MODEL, limit: Optional[in
              workers: int = 4, force: bool = False, path: Path = TRANSCRIPTS) -> dict:
     """Write a transcript for every calibration ticket that doesn't have a current one."""
     store = {r["ticket_id"]: r for r in read_jsonl(path)}
-    todo = [s for s in specs if force or not transcript_is_current(store.get(s["ticket_id"]), s)][:limit]
+    todo = [s for s in specs if force or not transcript_is_current(store.get(s["ticket_id"]), s, model)][:limit]
+    replaced = sum(store.get(s["ticket_id"], {}).get("model", model) != model for s in todo)
 
     def work(spec):
         data, usage, served = call_claude(client, model=model, system=WRITER_SYSTEM, user=writer_prompt(spec),
@@ -375,6 +384,8 @@ def generate(client, specs: list, model: str = DEFAULT_MODEL, limit: Optional[in
                 "transcript": check_transcript(data["transcript"]), "usage": usage}
 
     print(f"Writing {len(todo)} transcript(s) with {model}.")
+    if replaced:
+        print(f"{replaced} of them replace transcripts written by another model, so `judge` will score them again.")
     return run_parallel(todo, work, store, lambda r: r["ticket_id"], path, lambda r: r["ticket_id"], workers, "write")
 
 
@@ -403,12 +414,16 @@ def judge(client, specs: list, model: str = DEFAULT_MODEL, effort: str = DEFAULT
 
 def estimate(specs: list, model: str = DEFAULT_MODEL, effort: str = DEFAULT_JUDGE_EFFORT,
              transcripts_path: Path = TRANSCRIPTS, judgments_path: Path = JUDGMENTS) -> pd.DataFrame:
-    """Pending calls and their estimated cost, from measured token use when calls have already been made."""
+    """The calls `generate` and then `judge` would make with this model and effort, and their estimated cost.
+
+    Uses the measured token use of earlier calls with this model when there are any.
+    """
     saved_t = {r["ticket_id"]: r for r in read_jsonl(transcripts_path)}
-    pending_write = sum(not transcript_is_current(saved_t.get(s["ticket_id"]), s) for s in specs)
     saved_j = {(r["ticket_id"], r["model"], r["effort"]): r for r in read_jsonl(judgments_path)}
-    current = current_transcripts(specs, transcripts_path)
-    judged = sum(judgment_is_current(saved_j.get((tid, model, effort)), t) for tid, t in current.items())
+    written = [s["ticket_id"] for s in specs if transcript_is_current(saved_t.get(s["ticket_id"]), s, model)]
+    pending_write = len(specs) - len(written)
+    # A transcript that `generate` rewrites has to be judged again too.
+    judged = sum(judgment_is_current(saved_j.get((tid, model, effort)), saved_t[tid]) for tid in written)
     pending_judge = len(specs) - judged
     rows = []
     for stage, n, past in [("write", pending_write, list(saved_t.values())), ("judge", pending_judge, list(saved_j.values()))]:
@@ -429,14 +444,28 @@ def estimate(specs: list, model: str = DEFAULT_MODEL, effort: str = DEFAULT_JUDG
 
 
 def analyse(raw_dir: Path = pipeline.RAW, transcripts_path: Path = TRANSCRIPTS, judgments_path: Path = JUDGMENTS,
-            exports: Optional[Path] = pipeline.EXPORTS):
-    """Score every rater (six humans + each LLM judge) against the truth and the human majority."""
+            exports: Optional[Path] = pipeline.EXPORTS, require_results: bool = False):
+    """Score every rater (six humans + each LLM judge) against the truth and the human majority.
+
+    With no current judgments it does nothing, or with `require_results` (CI, once results are committed)
+    it exits with an error, so saved results that no longer match the data can't pass unnoticed.
+    """
     specs = load_specs(raw_dir)
     transcripts = current_transcripts(specs, transcripts_path)
-    judgments = [j for j in read_jsonl(judgments_path)
+    saved = read_jsonl(judgments_path)
+    judgments = [j for j in saved
                  if j["ticket_id"] in transcripts and judgment_is_current(j, transcripts[j["ticket_id"]])]
+    if len(judgments) < len(saved):
+        print(f"Ignoring {len(saved) - len(judgments)} saved judgment(s) that are out of date "
+              "(the ticket's spec, its transcript or the judge prompt changed).")
+    writers = sorted({t["model"] for t in transcripts.values()})
+    if len(writers) > 1:
+        print(f"Warning: the transcripts were written by more than one model ({', '.join(writers)}).")
     if not judgments:
-        print("No current judgments yet - run `generate` and `judge` first.")
+        message = "No current judgments - run `generate` and `judge` first."
+        if require_results:
+            raise SystemExit(message)
+        print(message)
         return None
 
     con = pipeline.build(raw_dir=raw_dir)
@@ -475,10 +504,13 @@ def main(argv: Optional[list] = None) -> None:
             p.add_argument("--limit", type=int, help="only make this many calls (try 5 first)")
             p.add_argument("--workers", type=int, default=4, help="parallel requests")
             p.add_argument("--force", action="store_true", help="redo calls even when the saved result is current")
+        if name == "analyse":
+            p.add_argument("--require-results", action="store_true",
+                           help="exit with an error if there are no current judgments (used by CI)")
     args = parser.parse_args(argv)
 
     if args.command == "analyse":
-        con = analyse()
+        con = analyse(require_results=args.require_results)
         if con is not None:
             print(con.table("llm_rater_agreement").df().to_string(index=False))
             print(f"Exported {len(EXPORT_TABLES)} tables to {pipeline.EXPORTS}")

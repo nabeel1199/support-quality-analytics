@@ -182,6 +182,41 @@ def test_a_changed_transcript_is_judged_again(run, specs, truth):
     assert len(judge.requests) == 1
 
 
+def test_generate_with_another_model_rewrites_the_transcripts(run, specs, truth, capsys):
+    go, paths = run
+    go()   # written with Opus
+    capsys.readouterr()
+    haiku = FakeClient(fake_answer(truth))
+    le.generate(haiku, specs, model="claude-haiku-5-5", path=paths.t)
+    assert len(haiku.requests) == 120
+    assert "120 of them replace transcripts written by another model" in capsys.readouterr().out
+    assert {r["model"] for r in le.read_jsonl(paths.t)} == {"claude-haiku-5-5"}
+    again = FakeClient(fake_answer(truth))
+    le.generate(again, specs, model="claude-haiku-5-5", path=paths.t)
+    assert again.requests == []
+
+
+def test_estimate_counts_a_model_switch_as_pending(run, specs):
+    go, paths = run
+    go()
+    kw = dict(transcripts_path=paths.t, judgments_path=paths.j)
+    assert le.estimate(specs, model="claude-opus-5-5", **kw).pending_calls.tolist() == [0, 0]
+    # generate would rewrite all 120 transcripts with Haiku, and then each needs a Haiku judgment.
+    assert le.estimate(specs, model="claude-haiku-5-5", **kw).pending_calls.tolist() == [120, 120]
+    assert le.estimate(specs, model="claude-opus-5-5", effort="high", **kw).pending_calls.tolist() == [0, 120]
+
+
+def test_judgments_from_each_model_are_kept_side_by_side(run, specs, truth, raw_dir):
+    go, paths = run
+    go()   # judged by Opus
+    haiku = FakeClient(fake_answer(truth))
+    le.judge(haiku, specs, model="claude-haiku-5-5", transcripts_path=paths.t, path=paths.j)
+    assert len(haiku.requests) == 120 and len(le.read_jsonl(paths.j)) == 240
+    con = le.analyse(raw_dir, paths.t, paths.j, exports=None)
+    raters = con.sql("SELECT DISTINCT rater FROM llm_rater_agreement WHERE rater_type = 'LLM'").fetchall()
+    assert sorted(r for (r,) in raters) == ["claude-haiku-5-5 @ medium", "claude-opus-5-5 @ medium"]
+
+
 def test_cache_files_are_sorted_and_stable(run):
     go, paths = run
     go()
@@ -274,6 +309,30 @@ def test_run_cost_adds_up(run, raw_dir):
 def test_analyse_without_judgments_does_nothing(raw_dir, tmp_path):
     assert le.analyse(raw_dir, tmp_path / "none.jsonl", tmp_path / "none.jsonl", exports=tmp_path) is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_ci_replay_fails_without_current_judgments(raw_dir, tmp_path):
+    with pytest.raises(SystemExit, match="No current judgments"):
+        le.analyse(raw_dir, tmp_path / "none.jsonl", tmp_path / "none.jsonl", exports=tmp_path, require_results=True)
+
+
+def test_ci_replay_fails_when_saved_judgments_are_out_of_date(run, raw_dir, monkeypatch, capsys):
+    go, paths = run
+    go()
+    assert le.analyse(raw_dir, paths.t, paths.j, exports=None, require_results=True) is not None
+    monkeypatch.setattr(le, "JUDGE_VERSION", "judge-v2")   # e.g. the judge prompt changed
+    with pytest.raises(SystemExit):
+        le.analyse(raw_dir, paths.t, paths.j, exports=None, require_results=True)
+    assert "Ignoring 120 saved judgment(s) that are out of date" in capsys.readouterr().out
+
+
+def test_cli_passes_require_results(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(le, "analyse", lambda **kw: seen.update(kw))
+    le.main(["analyse", "--require-results"])
+    assert seen == {"require_results": True}
+    le.main(["analyse"])
+    assert seen == {"require_results": False}
 
 
 def test_estimate_counts_pending_calls(specs, tmp_path):
