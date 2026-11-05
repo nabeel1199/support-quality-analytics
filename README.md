@@ -84,7 +84,7 @@ python src/llm_evaluator.py judge
 python src/llm_evaluator.py analyse             # exports/llm_*.csv
 ```
 
-Both steps default to Claude Opus 5.5: about $13 for all 240 calls by a rough estimate, which `estimate` refines once real calls exist. `--model claude-haiku-5-5` costs about $0.30. `--effort` sets the judge's thinking effort. Requests use structured outputs, so every judgment is valid JSON with evidence and a pass/fail for each criterion, plus the server-side refusal fallback. Every response is saved to `llm_eval/*.jsonl`. A rerun only calls the API for tickets that are missing or out of date, and CI replays the saved responses with no key.
+Both steps default to Claude Opus 5.5: about $13 for all 240 calls by a rough estimate, which `estimate` refines once real calls exist. `--model claude-haiku-5-5` costs about $0.30. `--effort` sets the judge's thinking effort. Requests use structured outputs, so every judgment is valid JSON with evidence and a pass/fail for each criterion, plus the server-side refusal fallback. Every response is saved to `llm_eval/*.jsonl`. A rerun only calls the API for tickets that are missing or out of date. Running `generate` with a different `--model` rewrites the transcripts, which then get judged again. `judge` keeps each model's judgments side by side, so a second judge model shows up as another rater. Once the saved responses are committed, CI replays them with no key and fails if they no longer match the data or prompts. Until then, that CI step is skipped.
 
 **Limits.** The transcripts are written by an LLM from the truth, so this measures whether the rubric is clear and the judge applies it consistently, not accuracy on real customer conversations. When the same model writes and judges, it may favour its own writing; judging with a different `--model` tests that. There are only 18 true critical-criteria errors, so a gap of a few points between raters is noise. `exports/llm_disagreements.csv` lists every judgement that differs from the truth, with the judge's evidence, to read by hand: a disagreement can be the judge's mistake or a transcript that missed its spec.
 
@@ -132,14 +132,14 @@ docker run --rm support-quality-analytics pytest   # run the tests
 
 ```bash
 pip install -r requirements-dev.txt
-pytest            # 52 tests, about 10 seconds
+pytest            # 58 tests, about 15 seconds
 ruff check src scripts tests
 ```
 
 - **Unit tests** (`tests/test_cleaning.py`) run the cleaning SQL on a tiny hand-made dataset in `tests/fixtures/`, where each ticket is built to break exactly one rule: a duplicate, a ticket resolved before it was created, a CSAT of 9, an unknown agent, a blank channel. They check that each problem is counted once and handled as documented, and that SLA, tenure bands, QA scores and auto-fails follow the rubric.
 - **End-to-end tests** (`tests/test_pipeline.py`) generate the full dataset and run every SQL file. They check that the generator is reproducible, every export has rows, all injected dirty data is found, scores and percentages stay in range, the headline numbers match this README, and the exports are **identical on every run**.
 - **LLM evaluator tests** (`tests/test_llm_evaluator.py`) use a fake API client, so they need no key and cost nothing. They check that the judge never sees the answer, that requests use structured output and the refusal fallback, that saved responses are reused and stale ones redone, that unusable or leaky output is rejected, and that a perfect judge scores exactly 100% while a single missed error is counted once.
-- **GitHub Actions** (`.github/workflows/ci.yml`) runs on every push and pull request, on Python 3.10 and 3.12. It lints, runs the tests, rebuilds the data, exports and dashboard and fails if the committed results differ from a fresh run, then builds the Docker image and runs the pipeline and tests inside it.
+- **GitHub Actions** (`.github/workflows/ci.yml`) runs on every push and pull request, on Python 3.10 and 3.12. It lints, runs the tests, rebuilds the data, exports and dashboard and fails if the committed results differ from a fresh run, then builds the Docker image and runs the pipeline and tests inside it. When LLM evaluator results are committed, it also replays them and fails if they are out of date.
 
 The run-to-run check caught two real issues. Tied agents in the scorecard came out in a different order on each run, so every sorted export now has a tie-breaker. Parallel aggregation also added floats in a different order each time, which could flip a rounded average (11.85 → 11.8 or 11.9), so the pipeline runs DuckDB on one thread.
 
